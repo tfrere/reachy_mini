@@ -6,8 +6,8 @@
 > shell, `sdk: static` deploy,
 > `mountHost()` / `connectToHost()` API, local dev, FAQ, and the host
 > ↔ embed contract. **Pin the SDK to
-> `@pollen-robotics/reachy-mini-sdk@1.8.0-rc1-main.fd4354c`** (the
-> version validated against the host shell + daemon).
+> `@pollen-robotics/reachy-mini-sdk@1.8.0`** (the stable release
+> validated against the host shell + daemon).
 >
 > **This file** is the runtime API surface of the `ReachyMini` class
 > you receive from `handle.reachy` once `connectToHost()` resolves:
@@ -109,6 +109,7 @@ new ReachyMini({
 | `setAntennasDeg(right, left)` | `boolean` | Set antenna positions in degrees (wraps `setTarget`) |
 | `setBodyYawDeg(yaw)` | `boolean` | Set body yaw in degrees (wraps `setTarget`) |
 | `playSound(filename)` | `boolean` | Play a sound file on the robot |
+| `clearIncomingAudio()` | `boolean` | Drop audio queued for the robot speaker (barge-in) |
 | `sendRaw(data)` | `boolean` | Send arbitrary JSON via data channel |
 | `requestState()` | `boolean` | Request a state snapshot |
 | `setAudioMuted(muted)` | — | Mute/unmute robot speaker (local) |
@@ -118,6 +119,17 @@ new ReachyMini({
 | `uploadAudio(blob, opts?)` | `Promise<string>` | Upload a standalone audio slot, returns `uploadId` — pair with `playUploadedAudio` for record-time sync |
 | `playUploadedAudio(uploadId, opts?)` | `Promise<{started: true, ...}>` | Trigger daemon-side standalone audio playback; resolves on the daemon's `started` broadcast (use as a sync anchor) |
 | `cancelAudio()` | `boolean` | Cancel an in-flight `playUploadedAudio` |
+
+> **`setTarget` head-vs-body coupling.** The `head` matrix is in the
+> world frame. Sending `setTarget({ body_yaw })` alone rotates the
+> body *but not the head's commanded world yaw* — the head's gaze
+> stays fixed in world frame, so visually it appears to counter-rotate
+> as the body turns. For tank-style "head follows body", add the body
+> yaw delta to the head RPY's yaw and ship `head` + `body_yaw` in the
+> same `setTarget` call. The baseline for the head yaw must be the
+> last *commanded* value you tracked yourself, not `state.head` from
+> the telemetry event — telemetry lags one WebRTC RTT and cumulative
+> deltas computed against it stall under rapid input.
 
 ### Events
 

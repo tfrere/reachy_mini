@@ -97,6 +97,8 @@ If your cable is plugged properly and you still have issues, it is likely that t
 For more details, see the documentation:  
 [Getting Started](./platforms/reachy_mini/get_started.md)
 
+- Update the firmware to version 2.1.4 or later. Run the [update script](https://github.com/pollen-robotics/reachy_mini/tree/main/src/reachy_mini/assets/firmware/update.sh).
+
 </details>
 
 <details>
@@ -645,6 +647,12 @@ Your GUI will open at the usual address (for example, `http://reachy-mini.local:
 
 </details>
 
+<details>
+<summary><strong>The Web App can't connect to my Reachy</strong></summary>
+
+Make sure that your Reachy is logged in to your HF account using the desktop app. Make sure there is no other web app connected to it. You may want to restart your browser or clear your cache.
+
+</details>
 
 
 ## 🕹️ Moving the Robot
@@ -731,12 +739,19 @@ If the period is much higher than 20ms, it means the control loop is not running
 
 To make it permanent:
 ```bash
-CARD=$(aplay -l | grep -i "reSpeaker" | head -n1 | sed -n 's/^card \([0-9]*\):.*/\1/p')
+CARD=$(aplay -l | grep -i "Reachy Mini Audio" | head -n1 | sed -n 's/^card \([0-9]*\):.*/\1/p')
 amixer -c "$CARD" set PCM,1 100%
 sudo alsactl store "$CARD"
 ```
 
 This is a [known issue](https://www.xmos.com/documentation/XM-014888-PC/html/modules/fwk_xvf/doc/user_guide/02_setting_up_the_hardware.html#low-volume-of-playback-audio-on-linux-for-project-ua) of the XVF3800 based sound card.
+
+</details>
+
+<details>
+<summary><strong>The sound quality is not great / the speaker sounds "boxy".</strong></summary>
+
+The daemon already applies a default equalizer to compensate for the head shell's acoustic coloration. If the sound still isn't to your liking, the per-band gains can be tuned — or the EQ disabled — via the `speaker_eq_gains` entry in the daemon config file. See [Advanced Media Controls → Speaker equalization](platforms/reachy_mini/media_advanced_controls.md#speaker-equalization).
 
 </details>
 
@@ -767,6 +782,13 @@ mini.media.push_audio_sample(numpy_chunk)
 </details>
 
 <details>
+<summary><strong>Can I get the raw microphone output?</strong></summary>
+
+Yes — install the [6-channel firmware](https://github.com/pollen-robotics/reachy_mini/tree/main/src/reachy_mini/assets/firmware).
+
+</details>
+
+<details>
 <summary><strong>How do I make Reachy look at something?</strong></summary>
 
 * **2D (Image):** `mini.look_at_image(x, y)` - (0,0 is top-left).
@@ -778,6 +800,15 @@ mini.media.push_audio_sample(numpy_chunk)
 <summary><strong>Face tracking feels slow.</strong></summary>
 
 Performance relies heavily on lighting conditions. Ensure the face is well-lit. The LOCAL backend (GStreamer IPC) provides the lowest latency for on-device applications.
+
+</details>
+
+<details>
+<summary><strong>The camera can't focus.</strong></summary>
+
+When running the [look_at example](https://huggingface.co/docs/reachy_mini/examples/look_at), it's easy to see whether the camera is focusing by putting your hand in front of it. If it isn't, the camera may be physically blocked. It is held to the black part by 4 screws — loosen them very slightly, about 1/8 of a turn.
+
+![camera_focus](https://github.com/pollen-robotics/reachy_mini/raw/main/docs/assets/troubleshooting_screw_focus_camera.png)
 
 </details>
 
@@ -822,19 +853,6 @@ You can play back a sound while recording simultaneously to test the echo cancel
 <details>
 <summary><strong>Motor '<name>' hardware errors: ['Input Voltage Error']</strong></summary>
 We are using a higher voltage on Reachy Mini, it's on purpose :)
-
-</details>
-
-
-
-<details>
-<summary><strong>Error: "OSError: PortAudio library not found"</strong></summary>
-
-This error occurs when using `sounddevice` directly (e.g. after calling `release_media()`). Install the system dependency:
-
-```bash
-sudo apt-get install libportaudio2
-```
 
 </details>
 

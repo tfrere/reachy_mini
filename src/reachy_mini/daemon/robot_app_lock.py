@@ -84,6 +84,14 @@ class RobotAppLock:
         # different thread, add a mutex here.
         self._on_remote_evicted: Optional[Callable[[], Awaitable[None]]] = None
 
+        # Synchronous callback invoked whenever the slot transitions to FREE
+        # (a remote session ended / disconnected, or a local app exited).
+        # Registered by the daemon to reset the robot to a clean idle state so
+        # no app leaves it parked awake (enabled / gravity_compensation) across
+        # sessions. Called *outside* the mutex, must return promptly and MUST
+        # NOT re-enter the lock (would deadlock).
+        self._on_became_free: Optional[Callable[[], None]] = None
+
     # ------------------------------------------------------------------
     # Registration
     # ------------------------------------------------------------------
@@ -99,6 +107,26 @@ class RobotAppLock:
         """
         self._on_remote_evicted = handler
 
+    def set_on_became_free_handler(self, handler: Optional[Callable[[], None]]) -> None:
+        """Register (or clear) the callback fired when the slot becomes FREE.
+
+        Fired once per FREE transition, from either ``release_local`` or
+        ``release_remote``, *after* the internal mutex is released. The handler
+        must return promptly and must not call back into this lock. Pass
+        ``None`` to clear.
+        """
+        self._on_became_free = handler
+
+    def _fire_became_free(self) -> None:
+        """Invoke the FREE-transition handler outside the mutex. Best-effort."""
+        handler = self._on_became_free
+        if handler is None:
+            return
+        try:
+            handler()
+        except Exception:
+            logger.warning("RobotAppLock: on_became_free handler raised", exc_info=True)
+
     # ------------------------------------------------------------------
     # Introspection
     # ------------------------------------------------------------------
@@ -111,6 +139,30 @@ class RobotAppLock:
     # ------------------------------------------------------------------
     # Local acquire / release
     # ------------------------------------------------------------------
+
+    def try_acquire_local(self, app_name: str) -> bool:
+        """Acquire the lock for a local Python app only if the slot is free.
+
+        Returns:
+            True if the lock was acquired. False if another local app or a
+            remote session already holds it. Unlike
+            :meth:`acquire_local_evicting_remote`, this never evicts a remote
+            session.
+
+        """
+        with self._mutex:
+            if self._state != RobotAppLockState.FREE:
+                logger.info(
+                    "RobotAppLock: local acquire refused (state=%s holder=%r requester=%r)",
+                    self._state.value,
+                    self._holder_name,
+                    app_name,
+                )
+                return False
+            self._state = RobotAppLockState.LOCAL_APP
+            self._holder_name = app_name
+            logger.info("RobotAppLock: acquired by local app %r", app_name)
+            return True
 
     async def acquire_local_evicting_remote(self, app_name: str) -> None:
         """Acquire the lock for a local Python app, evicting any remote session.
@@ -155,6 +207,33 @@ class RobotAppLock:
                     "RobotAppLock: remote eviction handler raised", exc_info=True
                 )
 
+    def acquire_local_keeping_remote(self, app_name: str) -> None:
+        """Acquire the local-app slot **without** evicting a remote session.
+
+        Used when the local app is started *by* the connected remote client
+        (e.g. the mobile app launching a conversation it will then drive): the
+        client is a controller, not a competitor for the robot, so its WebRTC
+        session must stay up. Transitions ``remote_session``/``free`` ->
+        ``local_app`` and does **not** invoke the eviction handler.
+
+        Raises:
+            RuntimeError: If another local app already holds the lock.
+
+        """
+        with self._mutex:
+            if self._state == RobotAppLockState.LOCAL_APP:
+                raise RuntimeError(
+                    f"A local app is already running: {self._holder_name!r}"
+                )
+            prev = self._state
+            self._state = RobotAppLockState.LOCAL_APP
+            self._holder_name = app_name
+            logger.info(
+                "RobotAppLock: acquired by local app %r (kept remote session, prev=%s)",
+                app_name,
+                prev.value,
+            )
+
     def release_local(self, app_name: Optional[str] = None) -> None:
         """Release the lock held by a local app.
 
@@ -186,6 +265,8 @@ class RobotAppLock:
             self._state = RobotAppLockState.FREE
             self._holder_name = None
             logger.info("RobotAppLock: released by local app %r", released_name)
+
+        self._fire_became_free()
 
     # ------------------------------------------------------------------
     # Remote acquire / release
@@ -228,3 +309,5 @@ class RobotAppLock:
             self._state = RobotAppLockState.FREE
             self._holder_name = None
             logger.info("RobotAppLock: released by remote session %r", released_name)
+
+        self._fire_became_free()

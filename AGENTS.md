@@ -133,7 +133,7 @@ See and run `examples/minimal_demo.py` - demonstrates connection, head motion, a
 >
 > That guide is the **single source of truth** for building a Reachy Mini JS app: scaffolding, `public/icon.svg`, host shell, `sdk: static` deploy, `mountHost()` / `connectToHost()` API, local dev, FAQ, and the host ↔ embed architecture reference. Everything that used to live in `SPEC.md` and `APP_AUTHOR_GUIDE.md` is folded in.
 >
-> **Today's SDK pin** (used by all three reference apps): `@pollen-robotics/reachy-mini-sdk@1.8.0-rc1-main.fd4354c`. See [§10 SDK version pinning](ts/APP_CREATION_GUIDE.md#10-sdk-version-pinning).
+> **Today's SDK pin** (used by all three reference apps): `@pollen-robotics/reachy-mini-sdk@1.8.0`. See [§10 SDK version pinning](ts/APP_CREATION_GUIDE.md#10-sdk-version-pinning).
 
 Browser apps that drive a Reachy Mini over WebRTC, deployed as Hugging Face Spaces. Any HF-authenticated user opens the Space URL from anywhere and reaches any robot they have access to, through the central signaling server.
 
@@ -143,6 +143,8 @@ Browser apps that drive a Reachy Mini over WebRTC, deployed as Hugging Face Spac
 - **Off-robot compute** - work lives in the browser or the Space backend; the robot stays a pure IO device.
 - **Bidirectional media** - robot camera/mic → browser; optionally user's mic → robot speaker.
 - **Free OAuth + robot picker + top bar + leave flow** via the host shell (`@pollen-robotics/reachy-mini-sdk/host`). You only write the app's UI; use any framework you want inside the iframe.
+
+> **Agent shortcut**: to scaffold a JS app fast (any author profile, "vibe coding"), read [`skills/create-js-app.md`](skills/create-js-app.md) first - it gives the golden path, the Always/Ask-First/Never boundaries, a copy-paste scaffold with animation best-practices pre-wired, and a definition of done. Use [`ts/APP_CREATION_GUIDE.md`](ts/APP_CREATION_GUIDE.md) as the deep reference it points into.
 
 ### Clone a reference app and trim
 
@@ -164,7 +166,7 @@ Unless the user explicitly asks for a desktop-only / kiosk / dev-tool UI, **assu
 
 Once `connectToHost()` resolves you get a live `ReachyMini` instance (`handle.reachy`). The full method/event reference lives in [`docs/source/SDK/javascript-sdk.md`](docs/source/SDK/javascript-sdk.md). The quick mental model:
 
-- **Motion (degrees)**: `setHeadRpyDeg(r, p, y)`, `setAntennasDeg(right, left)`, `setBodyYawDeg(yaw)`. Atomic raw-units: `setTarget({ head?: number[16], antennas?: [rRad, lRad], body_yaw?: rad })`.
+- **Motion (degrees)**: `setHeadRpyDeg(r, p, y)`, `setAntennasDeg(right, left)`, `setBodyYawDeg(yaw)`. Atomic raw-units: `setTarget({ head?: number[16], antennas?: [rRad, lRad], body_yaw?: rad })`. The head matrix is in world frame, so `body_yaw` alone pivots the body under the head — to make the head follow the body, ship a `head` matrix in the same call with the body delta added to the head yaw. Use your own last-commanded buffer as the baseline, not telemetry (lags by one RTT).
 - **Recorded-move playback (daemon-side, single-clock A/V sync)**: `playMove(motion, { audioBlob?, audioLeadMs? = -100 })` → `{finished|cancelled|error}`. `cancelMove()` stops mid-play. For record-time flows: `uploadAudio(blob)` returns `uploadId`, then `playUploadedAudio(uploadId)` resolves on the daemon's `started` broadcast (sync anchor). **Use these instead of hand-rolling `sendRaw` chunked uploads.**
 - **Audio**: `setAudioMuted(bool)`, `setMicMuted(bool)`, `getVolume()` / `setVolume(0-100)`, `getMicrophoneVolume()` / `setMicrophoneVolume(0-100)`. `playSound(file)`.
 - **Wake / torque**: `setMotorMode("enabled"|"disabled"|"gravity_compensation")`, `wakeUp()` / `gotoSleep()` / `isAwake()` / `ensureAwake()`.
@@ -175,11 +177,16 @@ Once `connectToHost()` resolves you get a live `ReachyMini` instance (`handle.re
 
 **The host owns all teardown** - never call `reachy.stopSession()` yourself, register an `onLeave` callback instead. For the canonical `onLeave` body, see [§14.3](ts/APP_CREATION_GUIDE.md#143-safe-return-to-home-pose-safelyreturntopose).
 
-### Legacy: minimal CDN-only path (`webrtc_example`)
+### Alternative: bare HTML + CDN (no bundler)
 
-Before the host shell, JS apps were `sdk: static` HF Spaces with a single `index.html` importing the SDK directly from jsDelivr and reimplementing OAuth + picker + session lifecycle by hand. The canonical example is [`cduss/webrtc_example`](https://huggingface.co/spaces/cduss/webrtc_example).
+For prototypes, learners, or anyone who'd rather not run `npm install`, a JS app can ship as a single `index.html` that imports the SDK from jsDelivr. No `package.json`, no `app_build_command`, no build step. Two sub-variants exist in the wild:
 
-**Use this only** for one-off prototypes that don't need the host shell's surface (no top bar, no picker, no theme propagation, no mobile-catalog tile). For anything you'd share, **start from a reference app instead** - you get OAuth, picker, mobile-catalog discovery, mode-B handoff, and the entire `connectToHost()` API for free.
+- **Modern (recommended for new apps)**: import the npm SDK from `cdn.jsdelivr.net/npm/@pollen-robotics/reachy-mini-sdk@<sha>/+esm` and use the host shell (`mountHost` + `connectToHost`). Same OAuth / picker / top bar / mode-B handoff as the bundled path - the host shell is identical, just loaded from the CDN instead of npm.
+- **Legacy single-file (pre-host-shell)**: import the SDK bundle from `cdn.jsdelivr.net/gh/pollen-robotics/reachy_mini@<tag>/js/reachy-mini.js`, instantiate `new ReachyMini(...)` directly, render your own picker / gate / top bar. Useful when you want full control over the pre-session UI; otherwise prefer the modern variant.
+
+The two variants are interoperable at the daemon level - they hit the same REST + WebRTC surface, so the motion API (`setTarget`, `setMotorMode`, `gotoTarget`, `setHeadRpyDeg`, `setAntennasDeg`, etc.) is identical on both. Migrating an existing legacy app to the modern host shell is a four-step swap that leaves motion code untouched.
+
+Full recipe (frontmatter, CDN imports, scaling guidance, when to graduate to Vite, legacy -> modern migration): [§11.5 of the App Creation Guide](ts/APP_CREATION_GUIDE.md#115-alternative-bare-html--cdn-no-bundler).
 
 ---
 
@@ -256,6 +263,10 @@ For coordinate systems and architecture details, see `docs/source/SDK/core-conce
 
 For platform-specific guides (Lite, Wireless, Simulation), see `docs/source/platforms/`.
 
+**Releasing the package:** see [`RELEASE.md`](RELEASE.md) — the `Release` workflow
+(`workflow_dispatch`, modes `minor-prerelease` / `minor-release` / `patch-release`)
+handles version bump, tag, PyPI publish, AI release notes, and downstream RC testing.
+
 ---
 
 ## Skills Reference
@@ -265,7 +276,8 @@ Read these files in `skills/` when you need detailed knowledge:
 | Skill | When to use |
 |-------|-------------|
 | **setup-environment.md** | First session, no `agents.local.md` exists |
-| **create-app.md** | Creating a new app with `reachy-mini-app-assistant` |
+| **create-js-app.md** | Creating a browser/JS app (HF Space, host shell + SDK) - the agent-first golden path for vibe-coding shareable apps |
+| **create-app.md** | Creating a new on-robot Python app with `reachy-mini-app-assistant` |
 | **control-loops.md** | Building real-time reactive apps (tracking, games) |
 | **motion-philosophy.md** | Choosing between `goto_target` and `set_target` |
 | **safe-torque.md** | Enabling/disabling motors without jerky motion |
