@@ -1,0 +1,1 @@
+{"id":"f3afcb07fae5b7fc8ef1e801f0757540","fullName":"tests.unit_tests.test_device_detection.TestFindAudioDevice#test_windows_skips_loopback_source","name":"test_windows_skips_loopback_source","status":"passed","testResultsByEnv":{"default":"5f956083b2cfc7dc71aaaa599dfb168a"}}
